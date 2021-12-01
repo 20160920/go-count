@@ -1,34 +1,48 @@
 package main
 
-import (
-	"fmt"
-	"sync"
-	"time"
-)
+import "runtime"
 
-type SafeCounter struct {
-	mu sync.Mutex
-	v  map[string]int
+type Counter interface {
+	Add(uint64)
+	Read() uint64
+	Init()
 }
 
-func (c *SafeCounter) Inc(key string) {
-
-	c.mu.Lock()
-	c.v[key]++
-	c.mu.Unlock()
+type ChannelCounter struct {
+	ch     chan func()
+	number uint64
 }
 
-func (c *SafeCounter) Value(key string) int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.v[key]
+func (c *ChannelCounter) Init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	panic("implement me")
+}
+
+func NewChannelCounter() Counter {
+	counter := &ChannelCounter{make(chan func(), 100), 0}
+	go func(counter *ChannelCounter) {
+		for f := range counter.ch {
+			f()
+		}
+	}(counter)
+	return counter
+}
+
+func (c *ChannelCounter) Add(num uint64) {
+	c.ch <- func() {
+		c.number = c.number + num
+	}
+}
+
+func (c *ChannelCounter) Read() uint64 {
+	ret := make(chan uint64)
+	c.ch <- func() {
+		ret <- c.number
+		close(ret)
+	}
+	return <-ret
 }
 
 func main() {
-	c := SafeCounter{v: make(map[string]int)}
-	for i := 0; i < 1000; i++ {
-		go c.Inc("somekey")
-	}
-	time.Sleep(time.Second)
-	fmt.Println(c.Value("somekey"))
+
 }
